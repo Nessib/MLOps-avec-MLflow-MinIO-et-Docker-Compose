@@ -1,0 +1,40 @@
+stages:
+  - build
+  - train
+  - deploy
+
+variables:
+  DOCKER_IMAGE: $CI_REGISTRY_IMAGE/mlops-api
+
+before_script:
+  - echo "Installing dependencies"
+  - pip install -r requirements.txt
+
+build:
+  stage: build
+  image: python:3.10
+  script:
+    - echo "Build stage started"
+    - docker build -t $DOCKER_IMAGE:$CI_COMMIT_SHORT_SHA .
+    - docker push $DOCKER_IMAGE:$CI_COMMIT_SHORT_SHA
+  only:
+    - main
+
+train_model:
+  stage: train
+  image: python:3.10
+  script:
+    - python model/train.py
+  only:
+    - main
+
+deploy:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache openssh
+  script:
+    - echo "Deploy stage started"
+    - ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "docker pull $DOCKER_IMAGE:$CI_COMMIT_SHORT_SHA && docker stop mlops-api || true && docker rm mlops-api || true && docker run -d --name mlops-api -p 8000:8000 $DOCKER_IMAGE:$CI_COMMIT_SHORT_SHA"
+  only:
+    - main

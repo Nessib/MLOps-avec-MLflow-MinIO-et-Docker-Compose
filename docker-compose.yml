@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mlflow-mysql
+    restart: always
+    environment:
+      MYSQL_DATABASE: mlflow
+      MYSQL_USER: mlflow
+      MYSQL_PASSWORD: secret
+      MYSQL_ROOT_PASSWORD: rootpass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  minio:
+    image: minio/minio
+    container_name: minio
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio123
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: server /data --console-address ":9001"
+
+  mlflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.mlflow
+    container_name: mlflow-server
+    depends_on:
+      - mysql
+      - minio
+    ports:
+      - "5000:5000"
+    environment:
+      AWS_ACCESS_KEY_ID: minio
+      AWS_SECRET_ACCESS_KEY: minio123
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+    command:
+      - mlflow
+      - server
+      - --backend-store-uri
+      - mysql+pymysql://mlflow:secret@mysql/mlflow
+      - --default-artifact-root
+      - s3://mlflow-artifacts/
+      - --host
+      - 0.0.0.0
+
+  init-minio:
+    image: minio/mc
+    container_name: init-minio
+    depends_on:
+      - minio
+    entrypoint: /bin/bash -c "/scripts/create_minio_bucket.sh"
+    volumes:
+      - ./create_minio_bucket.sh:/scripts/create_minio_bucket.sh
+    restart: "no"
+
+volumes:
+  mysql_data:
+  minio_data:
